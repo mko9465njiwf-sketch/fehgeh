@@ -1,0 +1,62 @@
+- name: 3. AnyDesk Stable Auto-Restart
+  shell: powershell
+  run: |
+    Write-Host "[INFO] Downloading AnyDesk..."
+    Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile "AnyDesk.exe"
+
+    Write-Host "[INFO] Installing..."
+    Start-Process ".\AnyDesk.exe" -ArgumentList "--install C:\AnyDesk --start-with-win --silent" -Wait
+
+    Start-Sleep -Seconds 20
+
+    $adPath = "C:\AnyDesk\AnyDesk.exe"
+
+    if (!(Test-Path $adPath)) {
+        Write-Host "[ERROR] AnyDesk not found!"
+        exit 1
+    }
+
+    function Start-AnyDesk {
+        Write-Host "[INFO] Starting AnyDesk..."
+        Start-Process $adPath
+        Start-Sleep -Seconds 10
+    }
+
+    function Get-ID {
+        try {
+            $id = & $adPath --get-id
+            return $id
+        } catch {
+            return ""
+        }
+    }
+
+    # 🔁 محاولة إلى أن نحصل ID صحيح
+    do {
+        Stop-Process -Name "AnyDesk" -Force -ErrorAction SilentlyContinue
+        Start-AnyDesk
+        $ID = Get-ID
+    } while ([string]::IsNullOrWhiteSpace($ID) -or $ID -eq "0")
+
+    Write-Host "[SUCCESS] ID: $ID"
+
+    # 🔐 تعيين كلمة المرور
+    "MR.English2008" | & $adPath --set-password _full_access
+
+    "ANYDESK_ID=$ID" | Out-File -Append $env:GITHUB_ENV
+
+    # 🔄 مراقبة مستمرة (auto-restart إذا يطفى)
+    $endTime = (Get-Date).AddHours(6)
+
+    while ((Get-Date) -lt $endTime) {
+        Start-Sleep -Seconds 60
+
+        $running = Get-Process -Name "AnyDesk" -ErrorAction SilentlyContinue
+
+        if (!$running) {
+            Write-Host "[WARNING] AnyDesk stopped! Restarting..."
+            Start-AnyDesk
+        } else {
+            Write-Host "[OK] AnyDesk running | $(Get-Date)"
+        }
+    }
